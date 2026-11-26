@@ -1,0 +1,7 @@
+Order ID: SYN-001
+Revision: 1
+Product: Valve
+Flow: 50 L/s
+Head: 30 cm
+Material: 316L
+Quantity: 5.5

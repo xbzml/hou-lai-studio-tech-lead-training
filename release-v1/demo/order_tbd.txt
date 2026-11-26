@@ -1,0 +1,7 @@
+Order ID: SYN-001
+Revision: 1
+Product: Pump
+Flow: 50 m3/h
+Head: 30 m
+Material: TBD
+Quantity: 5
