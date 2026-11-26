@@ -1,4 +1,9 @@
-"""T02 contract tests: required fields, blank values, and placeholders only."""
+"""T02 contract tests plus the T03 strictness that supersedes T02 boundaries.
+
+T02 expectations remain for required fields, blank values, and placeholders.
+The former "T02 scope boundary" test was replaced by T03Strictness because the
+final contract is T03.
+"""
 import unittest
 from pathlib import Path
 
@@ -77,25 +82,58 @@ class T02Contract(unittest.TestCase):
                 self.assertEqual(result['decision'], 'PASS')
                 self.assertEqual(result['findings'], [])
 
-    def test_t02_scope_boundary_does_not_validate_t03_rules(self):
-        # Invalid under T03, but T02 only checks presence and placeholders.
-        # This test must be revised when T03 validation is implemented.
-        cases = (
-            {'Product': 'Valve'},
-            {'Flow': '50'},
-            {'Flow': '-50 m3/h'},
-            {'Quantity': '5.5'},
-            {'Quantity': '0'},
-        )
-        for overrides in cases:
-            with self.subTest(overrides=overrides):
-                result = check_order(build_text(overrides=overrides))
-                self.assertEqual(result['decision'], 'PASS')
-                self.assertEqual(result['findings'], [])
-
     def test_decision_vocabulary_is_t02_only(self):
         for text in (build_text(), build_text(remove=('Material',))):
             self.assertIn(check_order(text)['decision'], {'PASS', 'REVIEW'})
+
+
+class T03Strictness(unittest.TestCase):
+    """T03 supersedes the former T02 scope boundary with strict checks."""
+
+    def test_structure_errors_are_reported(self):
+        cases = (
+            (build_text() + 'Material: 304L\n', 'Material', 'DUPLICATE_FIELD'),
+            (build_text() + 'Price: 100\n', 'Price', 'UNKNOWN_FIELD'),
+        )
+        for text, field, code in cases:
+            with self.subTest(code=code):
+                result = check_order(text)
+                self.assertEqual(result['decision'], 'REVIEW')
+                self.assertIn({'field': field, 'code': code}, result['findings'])
+
+        result = check_order(build_text() + 'no colon here\n')
+        self.assertEqual(result['decision'], 'REVIEW')
+        self.assertTrue(any(f['code'] == 'UNPARSABLE_LINE' for f in result['findings']))
+
+    def test_duplicate_key_cannot_mask_placeholder(self):
+        text = build_text().replace('Material: 316L\n',
+                                    'Material: TBD\nMaterial: 316L\n')
+        result = check_order(text)
+        self.assertEqual(result['decision'], 'REVIEW')
+        self.assertIn({'field': 'Material', 'code': 'DUPLICATE_FIELD'},
+                      result['findings'])
+        self.assertIn({'field': 'Material', 'code': 'MISSING_FIELD'},
+                      result['findings'])
+
+    def test_value_rules_are_enforced(self):
+        cases = (
+            ('Product', 'Valve', 'INVALID_VALUE'),
+            ('Product', 'pump', 'INVALID_VALUE'),
+            ('Flow', '50', 'INVALID_VALUE'),
+            ('Flow', '50 L/s', 'INVALID_UNIT'),
+            ('Flow', '-50 m3/h', 'NON_POSITIVE'),
+            ('Flow', 'nan m3/h', 'NON_FINITE'),
+            ('Head', '30 cm', 'INVALID_UNIT'),
+            ('Quantity', '5.5', 'INVALID_QUANTITY'),
+            ('Quantity', '0', 'INVALID_QUANTITY'),
+            ('Quantity', '-3', 'INVALID_QUANTITY'),
+            ('Quantity', '5 pcs', 'INVALID_QUANTITY'),
+        )
+        for field, value, code in cases:
+            with self.subTest(field=field, value=value):
+                result = check_order(build_text(overrides={field: value}))
+                self.assertEqual(result['decision'], 'REVIEW')
+                self.assertIn({'field': field, 'code': code}, result['findings'])
 
 
 if __name__ == '__main__':
